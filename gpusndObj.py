@@ -4,6 +4,7 @@ import vizconfig
 import wave
 import threading
 import pyaudio
+import time
 
 def addNewgpusndObj(*args, **kwargs):
 	newobj = gpusndObj(*args, **kwargs)
@@ -27,18 +28,20 @@ class gpusndObj(viz.VizObject):
 class AudioFile(threading.Thread):
     chunk = 1024
 
-    def __init__(self, file, loop):
-        """ Init audio stream """ 
+    def __init__(self, file, duration):
+        """ Initialize audio stream""" 
         
         super(AudioFile, self).__init__()
-        self.loop = loop
+        self.loop = True
         self.file = file
+        self.duration = duration
         
     def run(self):
+        """ Execute PyAudio """
         self.wf = wave.open(self.file, 'rb')
         self.p = pyaudio.PyAudio()
 
-        """ Play entire file """
+        """ Loop through file """
         self.stream = self.p.open(
             format = self.p.get_format_from_width(self.wf.getsampwidth()),
             channels = self.wf.getnchannels(),
@@ -46,13 +49,18 @@ class AudioFile(threading.Thread):
             output = True
             )
             
+            
         data = self.wf.readframes(self.chunk)
-        while self.loop:
+        while self.duration >= 0:
             self.stream.write(data)
             data = self.wf.readframes(self.chunk)
             if data == '':
                 self.wf.rewind()
                 data = self.wf.readframes(self.chunk)
+            time.sleep(1)
+            self.duration -= 1
+        #self.loop = False
+        
                 
         self.stream.close()
         self.p.terminate()
@@ -61,11 +69,9 @@ class AudioFile(threading.Thread):
         self.start()
         
     def stop(self):
-        self.loop == False
+        self.loop = False
 
-    def close(self):
-        """ Graceful shutdown """ 
-        
+
 
 # Usage example for pyaudio
 #a = AudioFile("C:\\Program Files\\WorldViz\\Vizard5\\resources\\buzzer.wav")

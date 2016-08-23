@@ -3,38 +3,58 @@ import vizmat
 import vizconfig
 import wave
 import threading
+from numpy import *
+from scipy import *
 import pyaudio
 import time
 
-def addNewgpusndObj(*args, **kwargs):
-	newobj = gpusndObj(*args, **kwargs)
-	return newobj
 
-class gpusndObj(viz.VizObject):
-	def __init__(self, *args, **kwargs):
-		viz.addChild(*args, **kwargs)
-		
-	def play3Dsnd(self, fl, mode):
-		'''1. Get location of self, and location of sound source. 
-		2. Determine elevation and azimuth of sound. 
-		3. Magic convolutions.
-		4. Stream sound.
-		5. Profit.'''
-		# open the file for reading.
-		# length of data to read.
-		
-		return
-		
+#
+#class gpusndObj(viz.VizNode):
+#	def __init__(self, *args, **kwargs):
+#		viz.addChild(*args, **kwargs)
+
+def addNewgpusndObj(*args, **kwargs):
+        newobj = gpusndObj(*args, **kwargs)
+        return newobj
+        
+class gpusndObj(viz.VizNode): 
+    def __init__(self, *args, **kwargs): 
+        node = viz.addChild(*args, **kwargs)
+        viz.VizNode.__init__(self, node.id)
+        self.noise = None
+        
+    def setnoise(self, file, duration, pos):
+        return AudioFile(file, duration, pos)
+        
+    
+    def play3Dsnd(self, file, duration, pos):
+        '''1. Get location of self, and location of sound source.
+        2. Determine elevation and azimuth of sound. 
+        3. Magic convolutions.
+        4. Stream sound.
+        5. Profit.'''
+        me = self.getPosition()
+        src = pos
+        diffx = abs(me[0]-src[0])
+        diffy = (me[1]-src[1])
+        diffz = abs(me[2]-src[2])
+        
+        return
+        
 class AudioFile(threading.Thread):
     chunk = 1024
 
-    def __init__(self, file, duration):
+    def __init__(self, file, duration, pos):
         """ Initialize audio stream""" 
         
         super(AudioFile, self).__init__()
         self.loop = True
         self.file = file
         self.duration = duration
+        self.azimuth = pos[0]
+        self.elevation = pos[1]
+        print viz.MainView.getPosition()
         
     def run(self):
         """ Execute PyAudio """
@@ -60,7 +80,6 @@ class AudioFile(threading.Thread):
             time.sleep(1)
             self.duration -= 1
         #self.loop = False
-        
                 
         self.stream.close()
         self.p.terminate()
@@ -70,10 +89,4 @@ class AudioFile(threading.Thread):
         
     def stop(self):
         self.loop = False
-
-
-
-# Usage example for pyaudio
-#a = AudioFile("C:\\Program Files\\WorldViz\\Vizard5\\resources\\buzzer.wav")
-#a.play()
-#a.close()
+    

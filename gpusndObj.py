@@ -26,7 +26,7 @@ class gpusndObj(viz.VizNode):
         vect = list(self.getAngles())
         dat= list(process3D(vect[0], vect[1], filename))
         fl = write2stereo(dat[0],dat[1],dat[2])
-        self.noise = AudioFile(filename, duration)
+        self.noise = AudioFile('snd3d.wav', duration)
         
     
     def getAngles(self):
@@ -163,6 +163,7 @@ def readKEMAR(elev, azi):
     fl_KEMAR = "compact/elev"+str(fl_elev)+"/H"+str(fl_elev)+"e"+str(azi)+"a.wav"
     print fl_KEMAR
     ht = wave.open(fl_KEMAR, 'r')
+    print ht.getparams()
     '''
     The process of splitting the left and right channels is
     almost entirely taken from:
@@ -171,6 +172,7 @@ def readKEMAR(elev, azi):
     '''
     data = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.int16)
     #left, right = data[0::2], data[1::2]
+    
     if flip:
         htr, htl= data[0::2], data[1::2]
     else:
@@ -187,8 +189,10 @@ def process3D(elev, azi, filename):
     src = wave.open(filename, 'r')
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
-    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.uint8)
-    
+    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.int16)
+    l_out = numpy.convolve(htl, src_d, 'valid')
+    r_out = numpy.convolve(htr, src_d, 'valid')
+    '''
     #convert to frequency domain
     f_hl = numpy.fft.fft(htl, len(src_d))
     f_hr = numpy.fft.fft(htr, len(src_d))
@@ -198,14 +202,24 @@ def process3D(elev, azi, filename):
     #inverse fourier
     l_out = numpy.fft.ifft(f_hl*f_src, len(src_d))
     r_out = numpy.fft.ifft(f_hr*f_src, len(src_d))
-    print type(l_out)
-    print type(r_out)
+    '''
     return l_out, r_out, params
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')
+    params[0] = 2
+    print params
     ofl.setparams(tuple(params))
-    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.uint8)
+    
+    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.int16)
     ofl.writeframes(ostr.tostring())
+    '''
+    import struct
+    for i in range(0, len(left)):
+        packed_value = struct.pack('I', left[i])
+        ofl.writeframes(packed_value)
+        packed_value = struct.pack('I', right[i])
+        ofl.writeframes(packed_value)
+    '''
     ofl.close()
-    return ofl
+    return 'snd3d.wav'

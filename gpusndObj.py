@@ -3,7 +3,7 @@ import vizmat
 import vizconfig
 import wave
 import threading
-from numpy import *
+import numpy
 import pyaudio
 import time
 import math
@@ -22,8 +22,11 @@ class gpusndObj(viz.VizNode):
         viz.VizNode.__init__(self, node.id)
         self.noise = None
         
-    def setNoise(self, file, duration):
-        self.noise = AudioFile(file, duration)
+    def setNoise(self, filename, duration):
+        vect = list(self.getAngles())
+        dat= list(process3D(vect[0], vect[1], filename))
+        fl = write2stereo(dat[0],dat[1],dat[2])
+        self.noise = AudioFile(filename, duration)
         
     
     def getAngles(self):
@@ -39,12 +42,10 @@ class gpusndObj(viz.VizNode):
         but mostly close enough.'''
         me = viz.MainView.getPosition()
         src = self.getPosition()
-        print me, src
         diffx, diffy, diffz = src[0]-me[0], src[1]-me[1], src[2]-me[2]
         elev = math.degrees(math.atan2(diffy, diffz))
         azi = math.degrees(math.atan2(diffx, diffz))
-        print elev, azi
-        readKEMAR(elev, azi)
+        return elev, azi
         
         
 class AudioFile(threading.Thread):
@@ -168,9 +169,8 @@ def readKEMAR(elev, azi):
     https://rsmith.home.xs4all.nl/miscellaneous/filtering-a-sound-recording.html
     Thank you, Roland.
     '''
-    size = 44100 # Read and process 1 second at a time.
-    data = fromstring(ht.readframes(size), dtype=int16)
-    left, right = data[0::2], data[1::2]
+    data = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.int16)
+    #left, right = data[0::2], data[1::2]
     if flip:
         htr, htl= data[0::2], data[1::2]
     else:
@@ -178,19 +178,34 @@ def readKEMAR(elev, azi):
         
     return htl, htr
     
-def process3D(elev, azi, src):
+def process3D(elev, azi, filename):
     '''
     This is where all the heavy lifting signal processing is done.
     Probably the best place to put parallelization to good use
     '''
-    #convert to frequency domain
+    # read-in data
+    src = wave.open(filename, 'r')
+    params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
-    f_hl = fft(htl, len(src))
-    f_hr = fft(htr, len(src))
-    f_src = fft(src)
+    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.uint8)
+    
+    #convert to frequency domain
+    f_hl = numpy.fft.fft(htl, len(src_d))
+    f_hr = numpy.fft.fft(htr, len(src_d))
+    f_src = numpy.fft.fft(src_d)
+    
     #multiply the frequency responses
     #inverse fourier
-    l_out = ifft(f_hl*f_src, len(src))
-    r_out = (f_hr*f_src, len(src))
+    l_out = numpy.fft.ifft(f_hl*f_src, len(src_d))
+    r_out = numpy.fft.ifft(f_hr*f_src, len(src_d))
+    print type(l_out)
+    print type(r_out)
+    return l_out, r_out, params
     
-    return l_out, r_out
+def write2stereo(left, right, params):
+    ofl = wave.open('snd3d.wav','w')
+    ofl.setparams(tuple(params))
+    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.uint8)
+    ofl.writeframes(ostr.tostring())
+    ofl.close()
+    return ofl

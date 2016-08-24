@@ -16,8 +16,8 @@ viz.MainView.move([0,0,-7])
 
 #new sound obj
 duck = gpusndObj.addNewgpusndObj('duck.cfg', pos=[0,0,7], euler=[180,0,0])
-duck.make3Dsnd("C:\\Program Files\\WorldViz\\Vizard5\\resources\\buzzer.wav", duration=4)
-quack = duck.setnoise("C:\\Program Files\\WorldViz\\Vizard5\\resources\\buzzer.wav", duration=4)
+duck.getAngles()
+quack = duck.setNoise("C:\\Program Files\\WorldViz\\Vizard5\\resources\\buzzer.wav", duration=4)
 duck.noise.play()
 
 

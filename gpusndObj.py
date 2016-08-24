@@ -4,7 +4,6 @@ import vizconfig
 import wave
 import threading
 from numpy import *
-#from scipy import *
 import pyaudio
 import time
 import math
@@ -23,11 +22,11 @@ class gpusndObj(viz.VizNode):
         viz.VizNode.__init__(self, node.id)
         self.noise = None
         
-    def setnoise(self, file, duration):
+    def setNoise(self, file, duration):
         self.noise = AudioFile(file, duration)
         
     
-    def make3Dsnd(self, file, duration):
+    def getAngles(self):
         '''1. Get location of self, and location of sound source.
         2. Determine elevation and azimuth of sound. 
         3. Magic convolutions.
@@ -96,7 +95,10 @@ def readKEMAR(elev, azi):
     '''convert elevation and azimuth values into
     something usable by compressed KEMAR data
     notes: elevation goes from 90 to -40
-    azimuth from 0 to 180 (left to right)'''
+    azimuth from 0 to 180 (left to right).
+    Actually relatively straightforward, serial
+    processing-wise. Just very ugly in-code.
+    '''
     fl_elev = int(round(elev, -1))
     if fl_elev > 90:
         fl_elev = 90
@@ -175,3 +177,20 @@ def readKEMAR(elev, azi):
         htl, htr = data[0::2], data[1::2]
         
     return htl, htr
+    
+def process3D(elev, azi, src):
+    '''
+    This is where all the heavy lifting signal processing is done.
+    Probably the best place to put parallelization to good use
+    '''
+    #convert to frequency domain
+    htl, htr = readKEMAR(elev, azi)
+    f_hl = fft(htl, len(src))
+    f_hr = fft(htr, len(src))
+    f_src = fft(src)
+    #multiply the frequency responses
+    #inverse fourier
+    l_out = ifft(f_hl*f_src, len(src))
+    r_out = (f_hr*f_src, len(src))
+    
+    return l_out, r_out

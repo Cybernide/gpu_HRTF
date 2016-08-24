@@ -170,13 +170,16 @@ def readKEMAR(elev, azi):
     https://rsmith.home.xs4all.nl/miscellaneous/filtering-a-sound-recording.html
     Thank you, Roland.
     '''
-    data = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.int16)
+    d = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.uint8)
     #left, right = data[0::2], data[1::2]
+    data = d.T
     
     if flip:
-        htr, htl= data[0::2], data[1::2]
+        #this needs to be transposed somehow
+        htr, htl= (data[0::2]).T, (data[1::2]).T
     else:
-        htl, htr = data[0::2], data[1::2]
+        #this needs to be transposed somehow
+        htl, htr = (data[0::2]).T, (data[1::2]).T
         
     return htl, htr
     
@@ -189,9 +192,9 @@ def process3D(elev, azi, filename):
     src = wave.open(filename, 'r')
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
-    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.int16)
-    l_out = numpy.convolve(htl, src_d, 'valid')
-    r_out = numpy.convolve(htr, src_d, 'valid')
+    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.uint8)
+    l_out = numpy.convolve(htl, src_d)
+    r_out = numpy.convolve(htr, src_d)
     '''
     #convert to frequency domain
     f_hl = numpy.fft.fft(htl, len(src_d))
@@ -211,7 +214,7 @@ def write2stereo(left, right, params):
     print params
     ofl.setparams(tuple(params))
     
-    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.int16)
+    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.uint8)
     ofl.writeframes(ostr.tostring())
     '''
     import struct

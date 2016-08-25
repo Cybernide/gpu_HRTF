@@ -1,21 +1,21 @@
 ﻿import viz
-#import vizmat
-#import vizconfig
+import vizmat
+import vizconfig
 import wave
 import threading
 import numpy
 import pyaudio
 import time
 import math
-import pycuda
 
 
-def addNewgpusndObj(*args, **kwargs):
+
+def addNewsndObj(*args, **kwargs):
         """ make a 3D sound object"""
-        newobj = gpusndObj(*args, **kwargs)
+        newobj = sndObj(*args, **kwargs)
         return newobj
         
-class gpusndObj(viz.VizNode):
+class sndObj(viz.VizNode):
     """ 3D sound object with an associated sound file"""
     def __init__(self, *args, **kwargs): 
         node = viz.addChild(*args, **kwargs)
@@ -163,23 +163,18 @@ def readKEMAR(elev, azi):
     fl_KEMAR = "compact/elev"+str(fl_elev)+"/H"+str(fl_elev)+"e"+str(azi)+"a.wav"
     print fl_KEMAR
     ht = wave.open(fl_KEMAR, 'r')
-    print ht.getparams()
     '''
     The process of splitting the left and right channels is
     almost entirely taken from:
     https://rsmith.home.xs4all.nl/miscellaneous/filtering-a-sound-recording.html
     Thank you, Roland.
     '''
-    d = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.uint8)
-    #left, right = data[0::2], data[1::2]
-    data = d.T
-    
+    data = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.int16)
+
     if flip:
-        #this needs to be transposed somehow
-        htr, htl= (data[0::2]).T, (data[1::2]).T
+        htr, htl= data[0::2], data[1::2]
     else:
-        #this needs to be transposed somehow
-        htl, htr = (data[0::2]).T, (data[1::2]).T
+        htl, htr = data[0::2], data[1::2]
         
     return htl, htr
     
@@ -192,37 +187,22 @@ def process3D(elev, azi, filename):
     src = wave.open(filename, 'r')
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
-    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.uint8)
+    src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
+    src_d = src_d/max(src_d)
+
     l_out = numpy.convolve(htl, src_d)
     r_out = numpy.convolve(htr, src_d)
-    '''
-    #convert to frequency domain
-    f_hl = numpy.fft.fft(htl, len(src_d))
-    f_hr = numpy.fft.fft(htr, len(src_d))
-    f_src = numpy.fft.fft(src_d)
-    
-    #multiply the frequency responses
-    #inverse fourier
-    l_out = numpy.fft.ifft(f_hl*f_src, len(src_d))
-    r_out = numpy.fft.ifft(f_hr*f_src, len(src_d))
-    '''
+
+
     return l_out, r_out, params
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')
     params[0] = 2
-    print params
     ofl.setparams(tuple(params))
     
-    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.uint8)
+    ostr = numpy.column_stack((left,right)).ravel()
     ofl.writeframes(ostr.tostring())
-    '''
-    import struct
-    for i in range(0, len(left)):
-        packed_value = struct.pack('I', left[i])
-        ofl.writeframes(packed_value)
-        packed_value = struct.pack('I', right[i])
-        ofl.writeframes(packed_value)
-    '''
+
     ofl.close()
     return 'snd3d.wav'

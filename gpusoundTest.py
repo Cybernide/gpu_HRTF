@@ -14,7 +14,7 @@ viz.addChild('dojo.osgb')
 viz.MainView.move([0,0,-7])
 
 #new sound obj
-duck = gpusndObj.addNewgpusndObj('duck.cfg', pos=[1,0,-4], euler=[180,0,0])
+duck = gpusndObj.addNewgpusndObj('duck.cfg', pos=[-3,0,-7], euler=[180,0,0])
 quack = duck.setNoise("buzzer.wav", duration=4)
 duck.noise.play()
 #quack.pause()

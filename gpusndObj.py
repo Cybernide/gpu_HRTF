@@ -206,57 +206,38 @@ def process3D(elev, azi, filename):
 
     # Allocate memory in device
     dev_out = numpy.empty_like(src_d)
-        
-    l_out = gpuConvolve(htl, src_d, dev_out)
+
+    l_out,l_mask = gpuConvolve(htl, src_d, dev_out)
     
-    r_out = gpuConvolve(htr, src_d, dev_out)
-    
+    r_out,r_mask = gpuConvolve(htr, src_d, dev_out)
+    print l_mask == r_mask
+    print l_out == r_out
     return l_out, r_out, params
     
 def gpuConvolve(mask, signal, outformat):
     
-    
-    
-    
     # CUDA-enabled portion
     
-    mod =SourceModule("""
-    #include <stdint.h>
-    const int MASK_W=129;   
-    const int TILE_SIZE = 1024;
-    __global__ void convKern(int16_t *sig, int16_t *mask, int16_t *outp)
+    mod = SourceModule("""
+    __global__ void convKern(int *ht, int *sig, int *outp)
     {
-    __shared__ int16_t  sig_ds[TILE_SIZE];
     int i = blockIdx.x*blockDim.x + threadIdx.x;
     
-    sig_ds[threadIdx.x] = sig[i];
-    __syncthreads();
-    
-    int this_start = blockIdx.x * blockDim.x;
-    int next_start = (blockIdx.x + 1) * blockDim.x;
-    
-    
-    int start = i - (MASK_W/2);
     int outp_val = 0;
+    int start = i - (129/2);
     
-    for (int j = 0; j < MASK_W; j++) {
-        int sig_index = start + j;
-        if (sig_index >= 0 && sig_index < 4837) {
-            if ((sig_index >= this_start)
-                && (sig_index < next_start)) {
-                outp_val += sig_ds[threadIdx.x + j - (MASK_W/2)]*mask[j];
-            }
-            else {
-            outp_val += sig[sig_index]* mask[j];
+    for (int j = 0; j < 129; j++) {
+        if (start + j >= 0 && start + j < 4837) {
+            outp_val += sig[start+ j]*ht[j];
             }
         }
-    }
     outp[i] = outp_val;
-    }""")
+    }
+    """)
     func = mod.get_function("convKern")
-    func(cuda.In(mask), cuda.In(signal),cuda.InOut(outformat),block=(1024,1,1), shared = signal.nbytes)
+    func(cuda.InOut(mask), cuda.In(signal),cuda.InOut(outformat),block=(1024,1,1))
 
-    return outformat
+    return outformat,mask
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')

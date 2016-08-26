@@ -187,7 +187,7 @@ def process3D(elev, azi, filename):
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
     src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
-    src_d = src_d/math.sqrt(max(src_d))
+    src_d = src_d/max(src_d)
         
     #Begin GPU-accelerated convolution
     
@@ -223,23 +223,38 @@ def gpuConvolve(mask, signal, outformat):
     mod =SourceModule("""
     #include <stdint.h>
     const int MASK_W=129;   
-    
+    const int TILE_SIZE = 1024;
     __global__ void convKern(int16_t *sig, int16_t *mask, int16_t *outp)
     {
+    __shared__ int16_t  sig_ds[TILE_SIZE];
     int i = blockIdx.x*blockDim.x + threadIdx.x;
     
-    int outp_val = 0;
+    sig_ds[threadIdx.x] = sig[i];
+    __syncthreads();
+    
+    int this_start = blockIdx.x * blockDim.x;
+    int next_start = (blockIdx.x + 1) * blockDim.x;
+    
+    
     int start = i - (MASK_W/2);
+    int outp_val = 0;
     
     for (int j = 0; j < MASK_W; j++) {
-        if (start + j >= 0 && start + j < 4837) {
-            outp_val += sig[start+ j]* mask[j];
+        int sig_index = start + j;
+        if (sig_index >= 0 && sig_index < 4837) {
+            if ((sig_index >= this_start)
+                && (sig_index < next_start)) {
+                outp_val += sig_ds[threadIdx.x + j - (MASK_W/2)]*mask[j];
+            }
+            else {
+            outp_val += sig[sig_index]* mask[j];
             }
         }
+    }
     outp[i] = outp_val;
     }""")
     func = mod.get_function("convKern")
-    func(cuda.In(mask), cuda.In(signal),cuda.InOut(outformat),block=(1024,1,1))
+    func(cuda.In(mask), cuda.In(signal),cuda.InOut(outformat),block=(1024,1,1), shared = signal.nbytes)
 
     return outformat
     
@@ -249,8 +264,8 @@ def write2stereo(left, right, params):
     ofl.setparams(tuple(params))
     
     ostr = numpy.column_stack((left,right)).ravel()
-    #ostr=ostr/math.sqrt(max(ostr))
-    print ostr
+    #ostr=ostr/max(ostr)
+    print max(ostr), min(ostr)
     ofl.writeframes(ostr.tostring())
     ofl.close()
     return 'snd3d.wav'

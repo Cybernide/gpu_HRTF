@@ -1,13 +1,10 @@
 ﻿import viz
-#import vizmat
-#import vizconfig
 import wave
 import threading
 import numpy
 import pyaudio
 import time
 import math
-#import pycuda
 from pycuda import gpuarray
 import pycuda.driver as cuda
 import pycuda.autoinit
@@ -183,7 +180,7 @@ def readKEMAR(elev, azi):
 def process3D(elev, azi, filename):
     '''
     This is where all the heavy lifting signal processing is done.
-    Probably the best place to put parallelization to good use
+    PyCUDA is used to parallelize.
     '''
     # read-in data
     src = wave.open(filename, 'r')
@@ -194,42 +191,30 @@ def process3D(elev, azi, filename):
 
     #Begin GPU-accelerated convolution
     
-    # Make htl and htrl C-contiguous
+    #If the filter array has an even
+    #number of elements, add 0 to the
+    #beginning to produce an odd-
+    #element convolution window.
+    
     if htl.size % 2 == 0:
         htl = numpy.append(0, htl)
     if htr.size % 2 == 0:
         htr = numpy.append(0, htr)
-        
+  
+    # Make htl and htrl C-contiguous
     htl = numpy.ascontiguousarray(htl)
     htr = numpy.ascontiguousarray(htr)
-    
-    # Obtain size of np arrays because
-    # silly C requires it.
-    # will probably have to deal with the fact that
-    # conv window is even sized. :P
-    #sz_htl = numpy.int16(htl.size)
-    #sz_htr = numpy.int16(htr.size)
-    
+    print src_d
+
     # Allocate memory in device
-    #import sys
-    dev_src_d = cuda.mem_alloc(src_d.nbytes)
-    cuda.memcpy_htod(dev_src_d, src_d)
     
-    dev_htl = cuda.mem_alloc(htl.nbytes)
-    cuda.memcpy_htod(dev_htl, htl)
-    dev_htr = cuda.mem_alloc(htr.nbytes)
-    cuda.memcpy_htod(dev_htr, htr)
+    dev_out=numpy.ones(src_d.size + htl.size, dtype=numpy.int16, order='C')
 
     
-    dev_out=numpy.empty_like(src_d)
-    
-    
-    #cuda.memcpy_htod(dev_sz_htl, sz_htl)
-    #cuda.memcpy_htod(dev_sz_htr, sz_htr)
-
-    
+    # CUDA-enabled portion
     mod = SourceModule("""
-    __global__ void conv(int *ht, int *sig, int *outp)
+    #include <stdint.h>
+    __global__ void conv(int16_t *ht, int16_t *sig, int16_t *outp)
     {
     int i = blockIdx.x*blockDim.x + threadIdx.x;
     
@@ -250,22 +235,16 @@ def process3D(elev, azi, filename):
     
     l_out = dev_out
     
-#    l_out = numpy.empty_like(src_d)
-#    print l_out
-#    cuda.memcpy_dtoh(l_out, dev_src_d)
-    
+    dev_out=numpy.ones(src_d.size + htr.size, dtype=numpy.int16, order='C')
     
     func = mod.get_function("conv")
     func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out), block=(129,1,1))
     
     r_out = dev_out
     
-#    r_out = numpy.empty_like(src_d)
-#    cuda.memcpy_dtoh(r_out, dev_out)
-
-    #l_out = numpy.convolve(htl, src_d)
-    #r_out = numpy.convolve(htr, src_d)    
-
+    print l_out
+    print r_out
+    
     return l_out, r_out, params
     
 def write2stereo(left, right, params):

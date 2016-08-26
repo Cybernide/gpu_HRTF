@@ -187,8 +187,8 @@ def process3D(elev, azi, filename):
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
     src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
-    src_d = src_d/max(src_d)
-
+    src_d = src_d/math.sqrt(max(src_d))
+        
     #Begin GPU-accelerated convolution
     
     #If the filter array has an even
@@ -205,43 +205,43 @@ def process3D(elev, azi, filename):
     htr = numpy.ascontiguousarray(htr)
 
     # Allocate memory in device
+    dev_out = numpy.empty_like(src_d)
+        
+    l_out = gpuConvolve(htl, src_d, dev_out)
     
-    dev_r_out=numpy.zeros(src_d.size + htl.size, dtype=numpy.int16, order='C')
-    dev_l_out=numpy.zeros(src_d.size + htr.size, dtype=numpy.int16, order='C')
-
+    r_out = gpuConvolve(htr, src_d, dev_out)
+    
+    return l_out, r_out, params
+    
+def gpuConvolve(mask, signal, outformat):
+    
+    
+    
     
     # CUDA-enabled portion
-    mod = SourceModule("""
+    
+    mod =SourceModule("""
     #include <stdint.h>
-    __global__ void conv(int16_t *ht, int16_t *sig, int16_t *outp)
+    const int MASK_W=129;   
+    
+    __global__ void convKern(int16_t *sig, int16_t *mask, int16_t *outp)
     {
     int i = blockIdx.x*blockDim.x + threadIdx.x;
     
     int outp_val = 0;
-    int start = i - (129/2);
+    int start = i - (MASK_W/2);
     
-    for (int j = 0; j < 129; j++) {
+    for (int j = 0; j < MASK_W; j++) {
         if (start + j >= 0 && start + j < 4837) {
-            outp_val += sig[start+ j]*ht[j];
+            outp_val += sig[start+ j]* mask[j];
             }
         }
     outp[i] = outp_val;
-    }
-    """)
-    
-    func = mod.get_function("conv")
-    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_l_out),block=(1024,1,1))
-    
-    l_out = dev_l_out
-    
-    func = mod.get_function("conv")
-    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_r_out), block=(1024,1,1))
-    
-    r_out = dev_r_out
-    
-    print r_out
-    
-    return l_out, r_out, params
+    }""")
+    func = mod.get_function("convKern")
+    func(cuda.In(mask), cuda.In(signal),cuda.InOut(outformat),block=(1024,1,1))
+
+    return outformat
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')
@@ -249,8 +249,8 @@ def write2stereo(left, right, params):
     ofl.setparams(tuple(params))
     
     ostr = numpy.column_stack((left,right)).ravel()
-    #ostr = ostr/max(ostr)
+    #ostr=ostr/math.sqrt(max(ostr))
+    print ostr
     ofl.writeframes(ostr.tostring())
-
     ofl.close()
     return 'snd3d.wav'

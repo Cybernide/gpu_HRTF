@@ -191,7 +191,8 @@ def process3D(elev, azi, filename):
 
     l_out = numpy.convolve(htl, src_d)
     r_out = numpy.convolve(htr, src_d)    
-
+    
+    
     return l_out, r_out, params
     
 def write2stereo(left, right, params):
@@ -200,6 +201,7 @@ def write2stereo(left, right, params):
     ofl.setparams(tuple(params))
     
     ostr = numpy.column_stack((left,right)).ravel()
+    print ostr
     ofl.writeframes(ostr.tostring())
 
     ofl.close()

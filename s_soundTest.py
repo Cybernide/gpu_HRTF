@@ -13,9 +13,8 @@ viz.addChild('dojo.osgb')
 #sets view position
 viz.MainView.move([0,0,-7])
 
-
 #new sound obj
-duck = sndObj.addNewsndObj('duck.cfg', pos=[0,0,7], euler=[180,0,0])
+duck = sndObj.addNewsndObj('duck.cfg', pos=[-3,0,-7], euler=[180,0,0])
 duck.getAngles()
 quack = duck.setNoise("buzzer.wav", duration=4)
 duck.noise.play()

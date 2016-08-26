@@ -7,8 +7,11 @@ import numpy
 import pyaudio
 import time
 import math
-import pycuda
-
+#import pycuda
+from pycuda import gpuarray
+import pycuda.driver as cuda
+import pycuda.autoinit
+from pycuda.compiler import SourceModule
 
 def addNewgpusndObj(*args, **kwargs):
         """ make a 3D sound object"""
@@ -163,24 +166,18 @@ def readKEMAR(elev, azi):
     fl_KEMAR = "compact/elev"+str(fl_elev)+"/H"+str(fl_elev)+"e"+str(azi)+"a.wav"
     print fl_KEMAR
     ht = wave.open(fl_KEMAR, 'r')
-    print ht.getparams()
     '''
     The process of splitting the left and right channels is
     almost entirely taken from:
     https://rsmith.home.xs4all.nl/miscellaneous/filtering-a-sound-recording.html
     Thank you, Roland.
     '''
-    d = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.uint8)
-    #left, right = data[0::2], data[1::2]
-    data = d.T
-    
+    data = numpy.fromstring(ht.readframes(ht.getframerate()), dtype=numpy.int16)
+
     if flip:
-        #this needs to be transposed somehow
-        htr, htl= (data[0::2]).T, (data[1::2]).T
+        htr, htl= data[0::2], data[1::2]
     else:
-        #this needs to be transposed somehow
-        htl, htr = (data[0::2]).T, (data[1::2]).T
-        
+        htl, htr = data[0::2], data[1::2]
     return htl, htr
     
 def process3D(elev, azi, filename):
@@ -192,37 +189,92 @@ def process3D(elev, azi, filename):
     src = wave.open(filename, 'r')
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
-    src_d = numpy.fromstring(src.readframes(src.getframerate()), numpy.uint8)
-    l_out = numpy.convolve(htl, src_d)
-    r_out = numpy.convolve(htr, src_d)
-    '''
-    #convert to frequency domain
-    f_hl = numpy.fft.fft(htl, len(src_d))
-    f_hr = numpy.fft.fft(htr, len(src_d))
-    f_src = numpy.fft.fft(src_d)
+    src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
+    src_d = src_d/max(src_d)
+
+    #Begin GPU-accelerated convolution
     
-    #multiply the frequency responses
-    #inverse fourier
-    l_out = numpy.fft.ifft(f_hl*f_src, len(src_d))
-    r_out = numpy.fft.ifft(f_hr*f_src, len(src_d))
-    '''
+    # Make htl and htrl C-contiguous
+    if htl.size % 2 == 0:
+        htl = numpy.append(0, htl)
+    if htr.size % 2 == 0:
+        htr = numpy.append(0, htr)
+        
+    htl = numpy.ascontiguousarray(htl)
+    htr = numpy.ascontiguousarray(htr)
+    
+    # Obtain size of np arrays because
+    # silly C requires it.
+    # will probably have to deal with the fact that
+    # conv window is even sized. :P
+    #sz_htl = numpy.int16(htl.size)
+    #sz_htr = numpy.int16(htr.size)
+    
+    # Allocate memory in device
+    #import sys
+    dev_src_d = cuda.mem_alloc(src_d.nbytes)
+    cuda.memcpy_htod(dev_src_d, src_d)
+    
+    dev_htl = cuda.mem_alloc(htl.nbytes)
+    cuda.memcpy_htod(dev_htl, htl)
+    dev_htr = cuda.mem_alloc(htr.nbytes)
+    cuda.memcpy_htod(dev_htr, htr)
+
+    
+    dev_out=numpy.empty_like(src_d)
+    
+    
+    #cuda.memcpy_htod(dev_sz_htl, sz_htl)
+    #cuda.memcpy_htod(dev_sz_htr, sz_htr)
+
+    
+    mod = SourceModule("""
+    __global__ void conv(int *ht, int *sig, int *outp)
+    {
+    int i = blockIdx.x*blockDim.x + threadIdx.x;
+    
+    int outp_val = 0;
+    int start = i - (129/2);
+    
+    for (int j = 0; j < 129; j++) {
+        if (start + j >= 0 && start + j < 4837) {
+            outp_val += sig[start+ j]*ht[j];
+            }
+        }
+    outp[i] = outp_val;
+    }
+    """)
+    
+    func = mod.get_function("conv")
+    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_out),block=(129,1,1))
+    
+    l_out = dev_out
+    
+#    l_out = numpy.empty_like(src_d)
+#    print l_out
+#    cuda.memcpy_dtoh(l_out, dev_src_d)
+    
+    
+    func = mod.get_function("conv")
+    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out), block=(129,1,1))
+    
+    r_out = dev_out
+    
+#    r_out = numpy.empty_like(src_d)
+#    cuda.memcpy_dtoh(r_out, dev_out)
+
+    #l_out = numpy.convolve(htl, src_d)
+    #r_out = numpy.convolve(htr, src_d)    
+
     return l_out, r_out, params
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')
     params[0] = 2
-    print params
     ofl.setparams(tuple(params))
     
-    ostr = numpy.column_stack((left,right)).ravel().astype(numpy.uint8)
+    ostr = numpy.column_stack((left,right)).ravel()
     ofl.writeframes(ostr.tostring())
-    '''
-    import struct
-    for i in range(0, len(left)):
-        packed_value = struct.pack('I', left[i])
-        ofl.writeframes(packed_value)
-        packed_value = struct.pack('I', right[i])
-        ofl.writeframes(packed_value)
-    '''
+
     ofl.close()
     return 'snd3d.wav'

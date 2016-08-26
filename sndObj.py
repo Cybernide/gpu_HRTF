@@ -175,7 +175,6 @@ def readKEMAR(elev, azi):
         htr, htl= data[0::2], data[1::2]
     else:
         htl, htr = data[0::2], data[1::2]
-        
     return htl, htr
     
 def process3D(elev, azi, filename):
@@ -191,8 +190,7 @@ def process3D(elev, azi, filename):
     src_d = src_d/max(src_d)
 
     l_out = numpy.convolve(htl, src_d)
-    r_out = numpy.convolve(htr, src_d)
-
+    r_out = numpy.convolve(htr, src_d)    
 
     return l_out, r_out, params
     

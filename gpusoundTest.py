@@ -18,5 +18,3 @@ duck = gpusndObj.addNewgpusndObj('duck.cfg', pos=[0,0,7], euler=[180,0,0])
 quack = duck.setNoise("buzzer.wav", duration=4)
 duck.noise.play()
 #quack.pause()
-
-

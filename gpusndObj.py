@@ -200,15 +200,14 @@ def process3D(elev, azi, filename):
         htl = numpy.append(0, htl)
     if htr.size % 2 == 0:
         htr = numpy.append(0, htr)
-  
     # Make htl and htrl C-contiguous
     htl = numpy.ascontiguousarray(htl)
     htr = numpy.ascontiguousarray(htr)
-    print src_d
 
     # Allocate memory in device
     
-    dev_out=numpy.ones(src_d.size + htl.size, dtype=numpy.int16, order='C')
+    dev_r_out=numpy.zeros(src_d.size + htl.size, dtype=numpy.int16, order='C')
+    dev_l_out=numpy.zeros(src_d.size + htr.size, dtype=numpy.int16, order='C')
 
     
     # CUDA-enabled portion
@@ -231,18 +230,15 @@ def process3D(elev, azi, filename):
     """)
     
     func = mod.get_function("conv")
-    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_out),block=(129,1,1))
+    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_l_out),block=(1024,1,1))
     
-    l_out = dev_out
-    
-    dev_out=numpy.ones(src_d.size + htr.size, dtype=numpy.int16, order='C')
+    l_out = dev_l_out
     
     func = mod.get_function("conv")
-    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out), block=(129,1,1))
+    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_r_out), block=(1024,1,1))
     
-    r_out = dev_out
+    r_out = dev_r_out
     
-    print l_out
     print r_out
     
     return l_out, r_out, params
@@ -253,6 +249,7 @@ def write2stereo(left, right, params):
     ofl.setparams(tuple(params))
     
     ostr = numpy.column_stack((left,right)).ravel()
+    #ostr = ostr/max(ostr)
     ofl.writeframes(ostr.tostring())
 
     ofl.close()

@@ -42,7 +42,7 @@ class sndObj(viz.VizNode):
         but mostly close enough.'''
         me = viz.MainView.getPosition()
         src = self.getPosition()
-        diffx, diffy, diffz = src[0]-me[0], src[1]-me[1], src[2]-me[2]
+        diffx, diffy, diffz = src[0]-me[0], (src[1]+1.0)-me[1], src[2]-me[2]
         elev = math.degrees(math.atan2(diffy, diffz))
         azi = math.degrees(math.atan2(diffx, diffz))
         return elev, azi

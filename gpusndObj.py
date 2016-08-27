@@ -42,7 +42,7 @@ class gpusndObj(viz.VizNode):
         but mostly close enough.'''
         me = viz.MainView.getPosition()
         src = self.getPosition()
-        diffx, diffy, diffz = src[0]-me[0], src[1]-me[1], src[2]-me[2]
+        diffx, diffy, diffz = src[0]-me[0], (src[1]+1.0)-me[1], src[2]-me[2]
         elev = math.degrees(math.atan2(diffy, diffz))
         azi = math.degrees(math.atan2(diffx, diffz))
         return elev, azi
@@ -189,8 +189,6 @@ def process3D(elev, azi, filename):
     src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
     #print max(src_d), min(src_d)
     src_d = src_d/(max(src_d))
-    #src_d = (src_d - src_d.min(0))/ (src_d.max(0) - src_d.min(0))
-    #print max(src_d), min(src_d)
         
     #Begin GPU-accelerated convolution
     
@@ -221,78 +219,46 @@ def process3D(elev, azi, filename):
     
     # CUDA-enabled portion
     mod = SourceModule("""
-    #include <stdint.h>
-    const int MASK_W=129;   
-    const int TILE_SIZE = 1024;
-    __global__ void convKernel(int16_t *sig, int16_t *mask, int16_t *outp)
-    {
-    int i = blockIdx.x*blockDim.x + threadIdx.x;
-    __shared__ int  sig_ds[TILE_SIZE];
-    sig_ds[threadIdx.x] = sig[i];
-    __syncthreads();
-    
-    int this_start = blockIdx.x * blockDim.x;
-    int next_start = (blockIdx.x + 1) * blockDim.x;
-    
-    int start = i - (MASK_W/2);
-    int outp_val = 0;
-
-    for (int j = 0; j < MASK_W; j++) {
-    int sig_index = start + j;
-        if (sig_index >= 0 && sig_index < 4837) {
-            if ((sig_index >= this_start)
-                && (sig_index < next_start)) {
-                outp_val += sig_ds[threadIdx.x + j - (MASK_W/2)]*mask[j];
-            }
-            else {
-            outp_val += sig[sig_index]* mask[j];
-            }
-        }
-    }
-    outp[i] = outp_val;
-    }""")
-    
-    '''dev_l_out = numpy.ones(src_d.size + htl.size, dtype=numpy.int16, order='C')
-    dev_r_out = numpy.ones(src_d.size + htr.size, dtype=numpy.int16, order='C')
-    
-    print dev_l_out == dev_r_out'''
-    
-    mod = SourceModule("""
-    __global__ void convKernel(int *ht, int *sig, int *outp)
+    __global__ void convKernel(int *htl, int *htr, int *sig, int *outl, int *outr)
     {
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
          i < 4836; 
          i += blockDim.x * gridDim.x){
+            int outl_val = 0;
+            int startl = i - (129/2);
     
-    int outp_val = 0;
-    int start = i - (129/2);
-    
-    for (int j = 0; j < 129; j++) {
-        if (start + j >= 0 && start + j < 4836) {
-            outp_val += sig[start+ j]*ht[j];
+        for (int j = 0; j < 129; j++) {
+            if (startl + j >= 0 && startl + j < 4836) {
+                outl_val += sig[startl+ j]*htl[j];
+                }
             }
+            outl[i] = outl_val;
         }
-    outp[i] = outp_val;
-    }
+        
+    for (int k = blockIdx.y * blockDim.y + threadIdx.y; 
+         k < 4836; 
+         k += blockDim.y * gridDim.y){
+            int outr_val = 0;
+            int startr = k - (129/2);
+    
+        for (int m = 0; m < 129; m++) {
+            if (startr + m >= 0 && startr + m < 4836) {
+                outr_val += sig[startr+ m]*htr[m];
+                }
+            }
+            outr[k] = outr_val;
+        }    
     }
     """)
     
-    dev_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
-    
+
+    dev_l_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
+    dev_r_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
+   
     func = mod.get_function("convKernel")
-    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_out),grid = (3,1), block=(1024,1,1))
-    
-    l_out = dev_out
-    
-    dev_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
-    func = mod.get_function("convKernel")
-    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out),grid = (3,1), block=(1024,1,1))
-    
-    print l_out
-    
-    r_out = dev_out
-    
-    return l_out, r_out, params
+    func(cuda.In(htl), cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_l_out), cuda.InOut(dev_r_out),grid = (2,2), block=(32,32,1))
+
+    return dev_l_out, dev_r_out, params
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')
@@ -300,13 +266,7 @@ def write2stereo(left, right, params):
     ofl.setparams(tuple(params))
     
     ostr = numpy.column_stack((left,right)).ravel()
-    #ostr=ostr/max(ostr)
     print max(ostr), min(ostr)
     ofl.writeframes(ostr.tostring())
     ofl.close()
     return 'snd3d.wav'
-    
-def padToSize(buf, size):
-    zilch = numpy.zeros(size)
-    zilch[:buf.size] = buf
-    return zilch

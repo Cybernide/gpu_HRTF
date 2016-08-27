@@ -188,7 +188,8 @@ def process3D(elev, azi, filename):
     htl, htr = readKEMAR(elev, azi)
     src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
     #print max(src_d), min(src_d)
-    src_d = src_d/max(src_d)
+    src_d = src_d/(max(src_d))
+    #src_d = (src_d - src_d.min(0))/ (src_d.max(0) - src_d.min(0))
     #print max(src_d), min(src_d)
         
     #Begin GPU-accelerated convolution
@@ -202,6 +203,9 @@ def process3D(elev, azi, filename):
         htl = numpy.append(0, htl)
     if htr.size % 2 == 0:
         htr = numpy.append(0, htr)
+        
+    htl = htl[::-1]
+    htr = htr[::-1]
 
     
 
@@ -209,17 +213,13 @@ def process3D(elev, azi, filename):
     htl = numpy.ascontiguousarray(htl)
     htr = numpy.ascontiguousarray(htr)
     
-    if htl.size != src_d.size:
-        htl = padToSize(htl, src_d.size)
-    if htr.size !=src_d.size:
-        htr = padToSize(htr, src_d.size)
+
 
 
     # Allocate memory in device
     
     
     # CUDA-enabled portion
-    '''
     mod = SourceModule("""
     #include <stdint.h>
     const int MASK_W=129;   
@@ -251,7 +251,6 @@ def process3D(elev, azi, filename):
     }
     outp[i] = outp_val;
     }""")
-    '''
     
     '''dev_l_out = numpy.ones(src_d.size + htl.size, dtype=numpy.int16, order='C')
     dev_r_out = numpy.ones(src_d.size + htr.size, dtype=numpy.int16, order='C')
@@ -261,7 +260,9 @@ def process3D(elev, azi, filename):
     mod = SourceModule("""
     __global__ void convKernel(int *ht, int *sig, int *outp)
     {
-    int i = blockIdx.x*blockDim.x + threadIdx.x;
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
+         i < 4836; 
+         i += blockDim.x * gridDim.x){
     
     int outp_val = 0;
     int start = i - (129/2);
@@ -273,30 +274,24 @@ def process3D(elev, azi, filename):
         }
     outp[i] = outp_val;
     }
+    }
     """)
     
     dev_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
     
     func = mod.get_function("convKernel")
-    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_out),block=(1024,1,1))
+    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_out),grid = (3,1), block=(1024,1,1))
     
     l_out = dev_out
     
     dev_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
     func = mod.get_function("convKernel")
-    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out),block=(1024,1,1))
+    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out),grid = (3,1), block=(1024,1,1))
+    
+    print l_out
     
     r_out = dev_out
-    '''
-    it = numpy.nditer(l_out, flags=['f_index'])
-    while not it.finished:
-        print "%d <%d>" % (it[0], it.index),
-        it.iternext()
-    '''
-    print l_out
-    print r_out
-    print l_out.size, r_out.size
-    print numpy.trim_zeros(l_out).size, numpy.trim_zeros(r_out).size
+    
     return l_out, r_out, params
     
 def write2stereo(left, right, params):

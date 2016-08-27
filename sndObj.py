@@ -187,14 +187,12 @@ def process3D(elev, azi, filename):
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
     src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
-    print min(src_d), max(src_d)
-    src_d = src_d/max(src_d)
-    print min(src_d), max(src_d)
+    src_d = src_d/(max(src_d))
+    l_out = numpy.convolve(htl, src_d)
+    r_out = numpy.convolve(htr, src_d)    
     
-    l_out = numpy.convolve(htl, src_d, 'same')
-    r_out = numpy.convolve(htr, src_d, 'same')    
+    print l_out
     
-    print l_out.size, r_out.size
     return l_out, r_out, params
     
 def write2stereo(left, right, params):

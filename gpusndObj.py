@@ -187,7 +187,9 @@ def process3D(elev, azi, filename):
     params = list(src.getparams())
     htl, htr = readKEMAR(elev, azi)
     src_d = numpy.fromstring(src.readframes(src.getframerate()), dtype=numpy.int16)
+    #print max(src_d), min(src_d)
     src_d = src_d/max(src_d)
+    #print max(src_d), min(src_d)
         
     #Begin GPU-accelerated convolution
     
@@ -200,26 +202,64 @@ def process3D(elev, azi, filename):
         htl = numpy.append(0, htl)
     if htr.size % 2 == 0:
         htr = numpy.append(0, htr)
+
+    
+
     # Make htl and htrl C-contiguous
     htl = numpy.ascontiguousarray(htl)
     htr = numpy.ascontiguousarray(htr)
+    
+    if htl.size != src_d.size:
+        htl = padToSize(htl, src_d.size)
+    if htr.size !=src_d.size:
+        htr = padToSize(htr, src_d.size)
+
 
     # Allocate memory in device
-    dev_out = numpy.empty_like(src_d)
-
-    l_out,l_mask = gpuConvolve(htl, src_d, dev_out)
     
-    r_out,r_mask = gpuConvolve(htr, src_d, dev_out)
-    print l_mask == r_mask
-    print l_out == r_out
-    return l_out, r_out, params
-    
-def gpuConvolve(mask, signal, outformat):
     
     # CUDA-enabled portion
+    '''
+    mod = SourceModule("""
+    #include <stdint.h>
+    const int MASK_W=129;   
+    const int TILE_SIZE = 1024;
+    __global__ void convKernel(int16_t *sig, int16_t *mask, int16_t *outp)
+    {
+    int i = blockIdx.x*blockDim.x + threadIdx.x;
+    __shared__ int  sig_ds[TILE_SIZE];
+    sig_ds[threadIdx.x] = sig[i];
+    __syncthreads();
+    
+    int this_start = blockIdx.x * blockDim.x;
+    int next_start = (blockIdx.x + 1) * blockDim.x;
+    
+    int start = i - (MASK_W/2);
+    int outp_val = 0;
+
+    for (int j = 0; j < MASK_W; j++) {
+    int sig_index = start + j;
+        if (sig_index >= 0 && sig_index < 4837) {
+            if ((sig_index >= this_start)
+                && (sig_index < next_start)) {
+                outp_val += sig_ds[threadIdx.x + j - (MASK_W/2)]*mask[j];
+            }
+            else {
+            outp_val += sig[sig_index]* mask[j];
+            }
+        }
+    }
+    outp[i] = outp_val;
+    }""")
+    '''
+    
+    '''dev_l_out = numpy.ones(src_d.size + htl.size, dtype=numpy.int16, order='C')
+    dev_r_out = numpy.ones(src_d.size + htr.size, dtype=numpy.int16, order='C')
+    
+    print dev_l_out == dev_r_out'''
     
     mod = SourceModule("""
-    __global__ void convKern(int *ht, int *sig, int *outp)
+    __global__ void convKernel(int *ht, int *sig, int *outp)
     {
     int i = blockIdx.x*blockDim.x + threadIdx.x;
     
@@ -227,17 +267,37 @@ def gpuConvolve(mask, signal, outformat):
     int start = i - (129/2);
     
     for (int j = 0; j < 129; j++) {
-        if (start + j >= 0 && start + j < 4837) {
+        if (start + j >= 0 && start + j < 4836) {
             outp_val += sig[start+ j]*ht[j];
             }
         }
     outp[i] = outp_val;
     }
     """)
-    func = mod.get_function("convKern")
-    func(cuda.InOut(mask), cuda.In(signal),cuda.InOut(outformat),block=(1024,1,1))
-
-    return outformat,mask
+    
+    dev_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
+    
+    func = mod.get_function("convKernel")
+    func(cuda.In(htl), cuda.In(src_d),cuda.InOut(dev_out),block=(1024,1,1))
+    
+    l_out = dev_out
+    
+    dev_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
+    func = mod.get_function("convKernel")
+    func(cuda.In(htr), cuda.In(src_d),cuda.InOut(dev_out),block=(1024,1,1))
+    
+    r_out = dev_out
+    '''
+    it = numpy.nditer(l_out, flags=['f_index'])
+    while not it.finished:
+        print "%d <%d>" % (it[0], it.index),
+        it.iternext()
+    '''
+    print l_out
+    print r_out
+    print l_out.size, r_out.size
+    print numpy.trim_zeros(l_out).size, numpy.trim_zeros(r_out).size
+    return l_out, r_out, params
     
 def write2stereo(left, right, params):
     ofl = wave.open('snd3d.wav','w')
@@ -250,3 +310,8 @@ def write2stereo(left, right, params):
     ofl.writeframes(ostr.tostring())
     ofl.close()
     return 'snd3d.wav'
+    
+def padToSize(buf, size):
+    zilch = numpy.zeros(size)
+    zilch[:buf.size] = buf
+    return zilch

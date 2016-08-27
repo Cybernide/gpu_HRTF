@@ -57,6 +57,10 @@ class gpusndObj(viz.VizNode):
             (src[1]+1.0)-me[1], src[2]-me[2])
         elev = math.degrees(math.atan2(diffy, diffz))
         azi = math.degrees(math.atan2(diffx, diffz))
+        
+        print ('Elevation at: ' + str(elev) + 
+            ' \n' + 'Azimuth: ' + str(azi))
+        
         return elev, azi
         
         
@@ -176,18 +180,18 @@ def readKEMAR(elev, azi):
         
     #special case for non-integer increment
     elif azi != 0:
-        int(incr * round(float(azi)/incr))
+        azi = int(incr * round(float(azi)/incr))
         
     # Finally, turn this mess into something
     # that can access the data.
     if int(azi) < 100:
-        azi = "0" + str(int(azi))
+        azi = '0' + str(int(azi))
     if int(azi) < 10:
-        azi = "00"+ str(int(azi))
+        azi = '00'+ str(int(azi))
         
     fl_KEMAR = (
-        "compact/elev"+str(fl_elev)+"/H"+str(fl_elev)+"e"+str(azi)+
-        "a.wav"
+        'compact/elev'+str(fl_elev)+'/H'+str(fl_elev)+'e'+str(azi)+
+        'a.wav'
         )
     ht = wave.open(fl_KEMAR, 'r')
     
@@ -244,8 +248,6 @@ def process3D(elev, azi, filename):
     # they can be read into PyCUDA.
     htl = numpy.ascontiguousarray(htl)
     htr = numpy.ascontiguousarray(htr)
-    
-    print htr.size, src_d.size
     
     # Begin CUDA module
     mod = SourceModule("""
@@ -310,7 +312,6 @@ def write2stereo(left, right, params):
     # Stereo .wav files are interleaved, thus we interleave
     # the values of our numpy array!
     ostr = numpy.column_stack((left,right)).ravel()
-    print max(ostr), min(ostr)
     ofl.writeframes(ostr.tostring())
     ofl.close()
     return 'snd3d.wav'

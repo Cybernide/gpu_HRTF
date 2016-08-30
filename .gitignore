@@ -7,3 +7,6 @@ Clib/gpuConv/Debug/gpuConv.exe
 Clib/gpuConv/gpuConv.sdf
 Clib/gpuConv/gpuConv/Debug/kernel.cu.obj
 *.pyc
+Clib/gpuConv/Debug/cudart64_75.dll
+Clib/gpuConv/gpuConv.sln
+Clib/gpuConv/gpuConv/Debug/kernel.cu.deps

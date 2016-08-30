@@ -1,0 +1,9 @@
+*.tlog
+Clib/gpuConv/Debug/cudart32_75.dll
+*.log
+Clib/gpuConv/gpuConv/vc110.pdb
+Clib/gpuConv/gpuConv/Debug/kernel.cu.cache
+Clib/gpuConv/Debug/gpuConv.exe
+Clib/gpuConv/gpuConv.sdf
+Clib/gpuConv/gpuConv/Debug/kernel.cu.obj
+*.pyc

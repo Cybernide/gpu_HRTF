@@ -32,7 +32,7 @@ class sndObj(viz.VizNode):
         """Attaches a wave file to the object"""
         vect = list(self.getAngles())
         dat= list(process3D(vect[0], vect[1], filename))
-        fl = write2stereo(dat[0],dat[1],dat[2])
+        fl = write2stereo(dat[0],dat[1],dat[2],str(vect[0]) + str(vect[1]))
         self.noise = AudioFile('snd3d.wav', duration)
         
     # Currently because of Vizard's MainView positioning
@@ -49,6 +49,10 @@ class sndObj(viz.VizNode):
             (src[1]+1.0)-me[1], src[2]-me[2])
         elev = math.degrees(math.atan2(diffy, diffz))
         azi = math.degrees(math.atan2(diffx, diffz))
+        
+        print ('Elevation at: ' + str(elev) + 
+            ' \n' + 'Azimuth: ' + str(azi))        
+        
         return elev, azi
         
         
@@ -167,8 +171,10 @@ def readKEMAR(elev, azi):
         azi = str(int(round(num)))
         
     #special case for non-integer increment
-    elif azi != 0:
+    elif (azi != 0 & incr != 0):
         azi = int(incr * round(float(azi)/incr))
+    elif (azi != 0 & incr == 0):
+        azi = 0
         
     # Finally, turn this mess into something
     # that can access the data.
@@ -212,17 +218,42 @@ def process3D(elev, azi, filename):
     src = wave.open(filename, 'r')
     params = list(src.getparams()) # saved for file reconstruction
     htl, htr = readKEMAR(elev, azi)
+
     src_d = numpy.fromstring(
         src.readframes(src.getframerate()), dtype=numpy.int16)
     src_d = src_d/(max(src_d))
+    if htl.size % 2 == 0:
+        htl = numpy.append(0, htl)
+    if htr.size % 2 == 0:
+        htr = numpy.append(0, htr)
+    htl = htl[::-1]
+    htr = htr[::-1]
+
+    from timeit import default_timer
+    startTime = default_timer()
+    l_out = numpy.zeros(src_d.size, dtype=numpy.int16)
+    outl_val = 0
+    for i in range(src_d.size - 1):
+        startl = htl.size/2
+        for j in range(htl.size - 1):
+            if (startl + j >= 0) & (startl + j < src_d.size):
+                outl_val += src_d[startl+ j]*htl[j]
+        l_out[i] = outl_val
+        
+    r_out = numpy.zeros(src_d.size, dtype=numpy.int16)
+    outr_val = 0
+    for k in range(src_d.size - 1):
+        startr = htr.size/2
+        for m in range(htr.size - 1):
+            if (startr + m >= 0) & (startr + m < src_d.size):
+                outr_val += src_d[startr+ m]*htr[m]
+        r_out[k] = outr_val
     
-    # a simple NumPy convolve
-    l_out = numpy.convolve(htl, src_d)
-    r_out = numpy.convolve(htr, src_d)    
-    
+    endTime = (default_timer() - startTime)
+    print ('Elapsed running time was ' + str(endTime) + ' ms.')
     return l_out, r_out, params
     
-def write2stereo(left, right, params):
+def write2stereo(left, right, params, pos_string):
     """ Convert two numpy arrays into a stereo audio file. """
     ofl = wave.open('snd3d.wav','w')
     params[0] = 2 # specify 2 audio channels
@@ -230,6 +261,7 @@ def write2stereo(left, right, params):
     # Stereo .wav files are interleaved, thus we interleave
     # the values of our numpy array!
     ostr = numpy.column_stack((left,right)).ravel()
+    print max(ostr), min(ostr)
     ofl.writeframes(ostr.tostring())
     ofl.close()
     return 'snd3d.wav'

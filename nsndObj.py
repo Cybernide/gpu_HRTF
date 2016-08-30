@@ -5,13 +5,9 @@ and given that a VizNode object has a location in the Viz
 environment, a head-related transfer function may be
 applied to the sound.
 
-Notable imports are: pyAudio for playing the audio itself 
-and pyCUDA for making the signal processing (a little) less 
-arduous.
+Written for performance comparison against gpusndObj.
 """
 
-# Yes, there are many dependencies.
-# I am not a very independent module.
 import viz
 import wave
 import threading
@@ -19,17 +15,13 @@ import numpy
 import pyaudio
 import time
 import math
-from pycuda import gpuarray
-import pycuda.driver as cuda
-import pycuda.autoinit
-from pycuda.compiler import SourceModule
 
-def addNewgpusndObj(*args, **kwargs):
+def addNewsndObj(*args, **kwargs):
         """ make a 3D sound object based off the VizNode class"""
-        newobj = gpusndObj(*args, **kwargs)
+        newobj = sndObj(*args, **kwargs)
         return newobj
         
-class gpusndObj(viz.VizNode):
+class sndObj(viz.VizNode):
     """ 3D sound object with an associated sound file"""
     def __init__(self, *args, **kwargs): 
         node = viz.addChild(*args, **kwargs)
@@ -57,10 +49,6 @@ class gpusndObj(viz.VizNode):
             (src[1]+1.0)-me[1], src[2]-me[2])
         elev = math.degrees(math.atan2(diffy, diffz))
         azi = math.degrees(math.atan2(diffx, diffz))
-        
-        print ('Elevation at: ' + str(elev) + 
-            ' \n' + 'Azimuth: ' + str(azi))
-        
         return elev, azi
         
         
@@ -187,13 +175,13 @@ def readKEMAR(elev, azi):
     # Finally, turn this mess into something
     # that can access the data.
     if int(azi) < 100:
-        azi = '0' + str(int(azi))
+        azi = "0" + str(int(azi))
     if int(azi) < 10:
-        azi = '00'+ str(int(azi))
+        azi = "00"+ str(int(azi))
         
     fl_KEMAR = (
-        'compact/elev'+str(fl_elev)+'/H'+str(fl_elev)+'e'+str(azi)+
-        'a.wav'
+        "compact/elev"+str(fl_elev)+"/H"+str(fl_elev)+"e"+str(azi)+
+        "a.wav"
         )
     ht = wave.open(fl_KEMAR, 'r')
     
@@ -229,89 +217,16 @@ def process3D(elev, azi, filename):
     src_d = numpy.fromstring(
         src.readframes(src.getframerate()), dtype=numpy.int16)
     src_d = src_d/(max(src_d))
-        
-    # Begin GPU-accelerated convolution
     
-    # If the filter array has an even
-    # number of elements, add 0 to the
-    # beginning to produce an odd-
-    # element convolution window.
-    if htl.size % 2 == 0:
-        htl = numpy.append(0, htl)
-    if htr.size % 2 == 0:
-        htr = numpy.append(0, htr)
-    
-    # Reverse filter array for convolving
-    # with signal.
-    htl = htl[::-1]
-    htr = htr[::-1]
-
-    # Make htl and htr C-contiguous so that
-    # they can be read into PyCUDA.
-    htl = numpy.ascontiguousarray(htl)
-    htr = numpy.ascontiguousarray(htr)
-
-    # Begin CUDA module
-    mod = SourceModule("""
-    __global__ void convKernel(
-        int *htl, int *htr, int *sig, 
-        int *outl, int *outr, 
-        int hlsize, int hrsize, int sigsize){
-    /* Process left ear */
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; 
-         i < sigsize;
-         i += blockDim.x * gridDim.x){
-            int outl_val = 0;
-            int startl = i - (hlsize/2);
-    
-        for (int j = 0; j < hlsize; j++) {
-            if (startl + j >= 0 && startl + j < sigsize) {
-                outl_val += sig[startl+ j]*htl[j];
-                }
-            }
-            outl[i] = outl_val;
-        }
-     /* Process right ear */           
-    for (int k = blockIdx.y * blockDim.y + threadIdx.y; 
-         k < sigsize; 
-         k += blockDim.y * gridDim.y){
-            int outr_val = 0;
-            int startr = k - (hrsize/2);
-    
-        for (int m = 0; m < hrsize; m++) {
-            if (startr + m >= 0 && startr + m < sigsize) {
-                outr_val += sig[startr+ m]*htr[m];
-                }
-            }
-            outr[k] = outr_val;
-        }    
-    }
-    """)
-    
-    
-    
-    # Initialize arrays for outputting results of CUDA kernel
-    dev_l_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
-    dev_r_out= numpy.zeros(src_d.size, dtype=numpy.int16, order='C')
-    
-    # Call kernel
-    
-    func = mod.get_function("convKernel")
     from timeit import default_timer
     startTime = default_timer()
-    func(cuda.In(htl), 
-        cuda.In(htr), 
-        cuda.In(src_d),
-        cuda.InOut(dev_l_out), 
-        cuda.InOut(dev_r_out), 
-        numpy.int32(htl.size),
-        numpy.int32(htr.size),
-        numpy.int32(src_d.size), 
-        grid = (2,2), block=(32,32,1))
+    # a simple NumPy convolve
+    l_out = numpy.convolve(htl, src_d)
+    r_out = numpy.convolve(htr, src_d)
     endTime = (default_timer() - startTime)
     print ('Elapsed running time was ' + str(endTime) + ' ms.')
-
-    return dev_l_out, dev_r_out, params
+    
+    return l_out, r_out, params
     
 def write2stereo(left, right, params):
     """ Convert two numpy arrays into a stereo audio file. """

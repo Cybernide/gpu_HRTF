@@ -26,5 +26,12 @@ wish and open any of the *sndTest*.py files. Currently only
 accepts 44kHz, int16 uncompressed .wav files, but can be changed
 pretty easily.
 
-NOTE: Will create a whackload of junk .wav files. That should be
-fixed soon-ish.
+gpusndObj uses PyCUDA and GPU-accelerated naive convolution.
+nsndObj uses NumPy GPU-only convolution.
+gpusndObj2 uses GPU-accelerated shared memory convolution.
+isndObj is iterative CPU-only convolution.
+
+NOTE: gpusndObj2 is experiencing issues with channel separation.
+isndObj has a lot of noise and distortion -- more than the other
+modules. I've included them anyway to demonstrate differences in
+processing speed between all these approaches.
